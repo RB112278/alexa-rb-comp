@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.local
+*.wav
+*.mp3
+models/
+.idea/
+.vscode/
+*.log
