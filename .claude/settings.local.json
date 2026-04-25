@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p \"C:/Users/Ramon/Desktop/Alexa RB Comp/research\")",
+      "Bash(cp \"C:/Users/Ramon/.claude/projects/C--Users-Ramon-Desktop-Alexa-RB-Comp/a84b7016-d3a3-4055-830f-7ea990eeeadd/tool-results/bywq4eufb.txt\" \"C:/Users/Ramon/Desktop/Alexa RB Comp/research/2026-04-25-tts-vad-architecture.md\")"
+    ]
+  }
+}

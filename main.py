@@ -65,9 +65,9 @@ WAKE_NAME = os.getenv("WAKE_WORD", "alexa")
 # silero-vad runs on 512-sample (32ms) chunks at 16kHz
 VAD_CHUNK_SAMPLES = 512
 VAD_THRESHOLD = float(os.getenv("VAD_THRESHOLD", "0.5"))
-VAD_MIN_SILENCE_MS = int(os.getenv("VAD_MIN_SILENCE_MS", "800"))
+VAD_MIN_SILENCE_MS = int(os.getenv("VAD_MIN_SILENCE_MS", "1500"))  # patience for thinking pauses
 VAD_MIN_SPEECH_MS = 250
-UTTERANCE_MAX_SECONDS = 15.0         # hard cap so we never listen forever
+UTTERANCE_MAX_SECONDS = 20.0         # hard cap so we never listen forever
 
 WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL", "base.en")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda")
@@ -222,42 +222,41 @@ def record_until_silence(
     vad_iter: VADIterator,
 ) -> np.ndarray:
     """
-    Record audio after wake word. silero-vad tells us when speech starts and
-    when it ends. We stop after VAD_MIN_SILENCE_MS of silence following speech.
-    Hard cap at UTTERANCE_MAX_SECONDS.
+    Record audio after wake word. silero-vad tracks speech vs. silence and
+    fires an "end" event after VAD_MIN_SILENCE_MS of contiguous silence
+    following speech — that's our turn-end signal. If speech resumes after
+    "end", silero will fire another "start" and we keep recording.
+
+    Hard cap at UTTERANCE_MAX_SECONDS so we never listen forever.
     """
     vad_iter.reset_states()
     collected: list[np.ndarray] = []
     speech_started = False
-    last_speech_time = 0.0
+    saw_end = False
     start_time = time.time()
 
     while True:
         chunk_i16 = q.get()
-        # silero-vad wants float32 in [-1, 1], shape (512,) at 16kHz
         chunk_f32 = _to_float32(chunk_i16)
-        # VADIterator expects torch tensor; chunk size must be exactly 512
         if len(chunk_f32) != VAD_CHUNK_SAMPLES:
-            # mic block size is set to 512, so this should not happen
             continue
         speech_event = vad_iter(torch.from_numpy(chunk_f32), return_seconds=False)
         collected.append(chunk_i16)
 
-        now = time.time()
         if speech_event is not None:
             if "start" in speech_event:
                 speech_started = True
-                last_speech_time = now
+                # if user resumes after a pause, silero gives us another start —
+                # forget the previous end so we keep going
+                saw_end = False
             if "end" in speech_event:
-                last_speech_time = now
+                saw_end = True
 
-        # While speaking (or before any speech yet), keep listening
-        if speech_started:
-            silence_ms = (now - last_speech_time) * 1000
-            if silence_ms >= VAD_MIN_SILENCE_MS:
-                break
-        # Hard cap so we never listen forever even if VAD never fires
-        if now - start_time >= UTTERANCE_MAX_SECONDS:
+        # Turn over only when we've seen speech AND silero has confirmed
+        # the user has been silent long enough to fire "end"
+        if speech_started and saw_end:
+            break
+        if time.time() - start_time >= UTTERANCE_MAX_SECONDS:
             break
 
     audio_i16 = np.concatenate(collected) if collected else np.zeros(0, dtype=np.int16)

@@ -46,4 +46,4 @@ We end the recording when there's been ≥800ms of silence *after* speech starte
 | Var | Default | Meaning |
 |---|---|---|
 | `VAD_THRESHOLD` | `0.5` | speech-confidence threshold per chunk |
-| `VAD_MIN_SILENCE_MS` | `800` | how much silence after speech ends the utterance |
+| `VAD_MIN_SILENCE_MS` | `1500` | how much silence after speech ends the utterance — bump higher if you get cut off mid-thought |
