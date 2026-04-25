@@ -9,6 +9,7 @@ Each file covers: what it does, why we picked it, the API we use, and gotchas.
 | Endpointing | silero-vad | [silero-vad.md](silero-vad.md) |
 | STT | faster-whisper | [faster-whisper.md](faster-whisper.md) |
 | LLM | anthropic (Claude Sonnet 4.6) | [anthropic-claude.md](anthropic-claude.md) |
+| Web search | Perplexity via OpenRouter | [perplexity.md](perplexity.md) |
 | TTS | kokoro-onnx | [kokoro-onnx.md](kokoro-onnx.md) |
 | Audio I/O | sounddevice | [sounddevice.md](sounddevice.md) |
 | CUDA on Windows | nvidia-cublas / cudnn / cuda_nvrtc | [cuda-windows.md](cuda-windows.md) |

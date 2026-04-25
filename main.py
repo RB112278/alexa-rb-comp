@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 # --- CUDA DLL discovery for faster-whisper on Windows -----------------------
 # faster-whisper -> ctranslate2 calls LoadLibraryW("cublas64_12.dll") at first
@@ -46,9 +46,14 @@ def _preload_nvidia_dlls() -> None:
                 pass
 
 _preload_nvidia_dlls()
-# override=True so a project-local .env wins over any stale Windows env var
-load_dotenv(override=True)
+# Project .env wins over stale Windows env vars — but only for keys with a
+# non-empty value. Empty .env entries (e.g. OPENROUTER_API_KEY=) should NOT
+# blow away a value that's already set in the shell.
+for _k, _v in dotenv_values().items():
+    if _v:
+        os.environ[_k] = _v
 
+import httpx  # noqa: E402
 import torch  # noqa: E402  (silero-vad needs it; safe to import after dll preload)
 from anthropic import Anthropic, APIStatusError, APIConnectionError  # noqa: E402
 from faster_whisper import WhisperModel  # noqa: E402
@@ -78,9 +83,44 @@ CLAUDE_SYSTEM = (
     "You are Samantha, a warm, witty desktop voice assistant on Ramon's PC. "
     "Speak naturally and conversationally — short sentences, no markdown, no lists, "
     "no headings. Keep most answers to 1-3 sentences unless Ramon asks for detail. "
-    "If you don't know something, say so plainly."
+    "If you don't know something, say so plainly.\n\n"
+    "You have a web_search tool that returns synthesized live answers from the web. "
+    "Use it for: weather, news, sports scores, stock prices, current events, recent "
+    "facts, or anything that may have changed since your training cutoff. For things "
+    "you already know (general knowledge, math, code, opinions), answer directly — "
+    "don't search unnecessarily, it adds latency.\n\n"
+    "When you DO call a tool, briefly say something first like 'Let me check that' "
+    "or 'One second' so the user hears the assistant thinking instead of dead silence."
 )
 CLAUDE_MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "400"))
+
+# --- Tool definitions ------------------------------------------------------
+TOOLS = [
+    {
+        "name": "web_search",
+        "description": (
+            "Search the live web via Perplexity for current or realtime information. "
+            "Returns a synthesized answer with sources baked into the prose. Use for "
+            "anything time-sensitive: weather, news, scores, prices, recent events, "
+            "things that may have changed since your training data."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": (
+                        "Concise natural-language search query, e.g. "
+                        "'weather in Miami today' or 'latest score Knicks vs Celtics'."
+                    ),
+                },
+            },
+            "required": ["query"],
+        },
+    },
+]
+PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "perplexity/sonar")
+PERPLEXITY_TIMEOUT_S = float(os.getenv("PERPLEXITY_TIMEOUT_S", "20"))
 
 KOKORO_MODEL_PATH = os.getenv("KOKORO_MODEL_PATH", "models/kokoro-v1.0.onnx")
 KOKORO_VOICES_PATH = os.getenv("KOKORO_VOICES_PATH", "models/voices-v1.0.bin")
@@ -263,6 +303,43 @@ def record_until_silence(
     return _to_float32(audio_i16)
 
 
+# --- Tool implementations ---------------------------------------------------
+def web_search(query: str) -> str:
+    """
+    Hit Perplexity Sonar via OpenRouter. Returns a synthesized answer string
+    suitable to hand back to Claude as a tool_result. Failures return a short
+    error string rather than raising — Claude can then voice an apology.
+    """
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        return (
+            "Web search unavailable: OPENROUTER_API_KEY is not set. "
+            "Tell the user they need to add an OpenRouter key to the dot env file."
+        )
+    try:
+        r = httpx.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/RB112278/alexa-rb-comp",
+                "X-Title": "Alexa RB Comp",
+            },
+            json={
+                "model": PERPLEXITY_MODEL,
+                "messages": [{"role": "user", "content": query}],
+            },
+            timeout=PERPLEXITY_TIMEOUT_S,
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data["choices"][0]["message"]["content"]
+    except httpx.HTTPStatusError as e:
+        return f"Web search HTTP {e.response.status_code}: {e.response.text[:200]}"
+    except Exception as e:
+        return f"Web search failed: {type(e).__name__}: {e}"
+
+
 # --- LLM streaming + sentence chunking --------------------------------------
 def stream_claude_to_tts(
     client: Anthropic,
@@ -271,9 +348,16 @@ def stream_claude_to_tts(
     tts: TTSPlayer,
 ) -> str:
     """
-    Stream Claude's reply token-by-token. Whenever the buffer ends in a sentence
-    boundary (and is at least MIN_CHUNK_CHARS long), flush the completed
-    sentence(s) to TTS. Returns the full reply text.
+    Stream Claude's reply with tool-use support. Loops until Claude returns a
+    response with no further tool calls.
+
+    Per iteration:
+      - Stream tokens, flushing complete sentences to the TTS queue
+      - On stream end, check the final message for tool_use blocks
+      - If any: execute each tool, append tool_results, loop
+      - Otherwise: done
+
+    Returns the concatenated spoken text.
     """
     history.append({"role": "user", "content": user_text})
     full_text_parts: list[str] = []
@@ -288,9 +372,8 @@ def stream_claude_to_tts(
             full_text_parts.append(buffer.strip())
             buffer = ""
             return
-        # Find a sentence boundary at or after position MIN_CHUNK_CHARS-1 so
-        # short openers ("Sure." "Of course.") get merged with the next clause
-        # instead of being spoken alone.
+        # Sentence boundary at or after MIN_CHUNK_CHARS-1 so short openers
+        # ("Sure." "Of course.") merge with the next clause.
         while True:
             search_from = max(0, MIN_CHUNK_CHARS - 1)
             m = SENTENCE_END_RE.search(buffer, search_from)
@@ -302,21 +385,50 @@ def stream_claude_to_tts(
             full_text_parts.append(sentence)
             buffer = buffer[end_idx:].lstrip()
 
-    with client.messages.stream(
-        model=CLAUDE_MODEL,
-        max_tokens=CLAUDE_MAX_TOKENS,
-        system=CLAUDE_SYSTEM,
-        messages=history,
-    ) as stream:
-        for text_delta in stream.text_stream:
-            buffer += text_delta
-            flush_sentences()
+    MAX_TOOL_HOPS = 4  # safety cap so a tool loop can't run forever
+    for hop in range(MAX_TOOL_HOPS):
+        with client.messages.stream(
+            model=CLAUDE_MODEL,
+            max_tokens=CLAUDE_MAX_TOKENS,
+            system=CLAUDE_SYSTEM,
+            tools=TOOLS,
+            messages=history,
+        ) as stream:
+            for text_delta in stream.text_stream:
+                buffer += text_delta
+                flush_sentences()
+            flush_sentences(force=True)
+            final_msg = stream.get_final_message()
 
-    # Flush any trailing fragment
-    flush_sentences(force=True)
-    full_reply = " ".join(p.strip() for p in full_text_parts).strip()
-    history.append({"role": "assistant", "content": full_reply})
-    return full_reply
+        # Persist Claude's full turn (text blocks + tool_use blocks) to history
+        history.append({"role": "assistant", "content": final_msg.content})
+
+        tool_uses = [b for b in final_msg.content if getattr(b, "type", None) == "tool_use"]
+        if not tool_uses:
+            break  # no more tools called — done
+
+        # Execute every tool call in this turn, build tool_results
+        tool_results = []
+        for tu in tool_uses:
+            args = dict(tu.input) if hasattr(tu.input, "__iter__") else tu.input
+            print(f"[tool] {tu.name}({args})")
+            t0 = time.time()
+            if tu.name == "web_search":
+                result = web_search(args["query"])
+            else:
+                result = f"Unknown tool: {tu.name}"
+            print(f"[tool] {tu.name} returned in {time.time()-t0:.2f}s ({len(result)} chars)")
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tu.id,
+                "content": result,
+            })
+        history.append({"role": "user", "content": tool_results})
+    else:
+        # Hit the hop cap — speak a fallback so the user isn't left hanging
+        tts.say("I got stuck in a tool loop. Try asking again.")
+
+    return " ".join(p.strip() for p in full_text_parts).strip()
 
 
 # --- Main loop --------------------------------------------------------------

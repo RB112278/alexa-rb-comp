@@ -108,10 +108,11 @@ Whisper weights (~150 MB) and openwakeword models (~5 MB) auto-download on first
 2. ✅ Replace SAPI with Kokoro (10× better voice)
 3. ✅ Replace fixed 5s window with silero-vad endpointing
 4. ✅ Claude Sonnet 4.6 streaming with sentence-chunked TTS
-5. ☐ Custom "Hey Ramon" wake word (`workflows/custom-wake-word.md`)
-6. ☐ Samantha-from-Her voice via F5-TTS clone (`workflows/voice-cloning.md`)
-7. ☐ Barge-in (interrupt agent mid-sentence by speaking)
-8. ☐ Tool use — open apps, search files, control music
+5. ✅ Realtime data via Perplexity tool use (`workflows/web-search.md`)
+6. ☐ Custom "Hey Ramon" wake word (`workflows/custom-wake-word.md`)
+7. ☐ Samantha-from-Her voice via F5-TTS clone (`workflows/voice-cloning.md`)
+8. ☐ Barge-in (interrupt agent mid-sentence by speaking)
+9. ☐ More tools — open apps, search files, control music, read clipboard
 
 ## Troubleshooting
 
