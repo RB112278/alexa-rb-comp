@@ -17,22 +17,29 @@ import numpy as np
 import sounddevice as sd
 
 # --- CUDA DLL discovery for faster-whisper on Windows -----------------------
-# faster-whisper looks for cuBLAS + cuDNN at import time. The pip-installed
-# nvidia-* packages drop DLLs in site-packages; we add those dirs to the loader
-# search path before importing whisper.
-def _add_nvidia_dll_dirs() -> None:
+# faster-whisper -> ctranslate2 calls LoadLibraryW("cublas64_12.dll") at first
+# GPU op. ctranslate2's loader does NOT honor os.add_dll_directory(), so we
+# pre-load the DLLs with ctypes; once they're in the process, Windows resolves
+# the later LoadLibraryW by module name from the already-loaded list.
+def _preload_nvidia_dlls() -> None:
     if sys.platform != "win32":
         return
-    import importlib.util
-    for pkg in ("nvidia.cublas", "nvidia.cudnn"):
+    import ctypes, importlib.util
+    for pkg in ("nvidia.cublas", "nvidia.cudnn", "nvidia.cuda_nvrtc"):
         spec = importlib.util.find_spec(pkg)
         if not spec or not spec.submodule_search_locations:
             continue
         bin_dir = Path(spec.submodule_search_locations[0]) / "bin"
-        if bin_dir.is_dir():
-            os.add_dll_directory(str(bin_dir))
+        if not bin_dir.is_dir():
+            continue
+        os.add_dll_directory(str(bin_dir))
+        for dll in bin_dir.glob("*.dll"):
+            try:
+                ctypes.WinDLL(str(dll))
+            except OSError:
+                pass  # some DLLs depend on others loaded later; harmless
 
-_add_nvidia_dll_dirs()
+_preload_nvidia_dlls()
 
 from faster_whisper import WhisperModel  # noqa: E402
 from openwakeword.model import Model as WakeModel  # noqa: E402
