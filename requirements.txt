@@ -1,8 +1,29 @@
+# Core voice pipeline
 faster-whisper>=1.0.3
 openwakeword>=0.6.0
+silero-vad>=6.0.0
+kokoro-onnx>=0.5.0
+
+# LLM
+anthropic>=0.97.0
+
+# Audio I/O
 sounddevice>=0.4.6
+soundfile>=0.13.0
 numpy>=1.26,<2.3
+
+# Config
+python-dotenv>=1.0.0
+
+# Windows TTS fallback (kept for the old SAPI path; harmless on macOS/Linux)
 pyttsx3>=2.90
-pywin32>=306
-nvidia-cublas-cu12
-nvidia-cudnn-cu12==9.*
+pywin32>=306; sys_platform == "win32"
+
+# CUDA libs for faster-whisper on Windows (cuBLAS + cuDNN are pre-loaded
+# via ctypes in main.py to work around ctranslate2's loader)
+nvidia-cublas-cu12; sys_platform == "win32"
+nvidia-cudnn-cu12==9.*; sys_platform == "win32"
+
+# onnxruntime-gpu pulls CUDA execution provider for openwakeword + kokoro;
+# falls back to CPU automatically when CUDA libs are incomplete.
+onnxruntime-gpu>=1.20; sys_platform == "win32"
