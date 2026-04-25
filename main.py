@@ -46,10 +46,11 @@ def _preload_nvidia_dlls() -> None:
                 pass
 
 _preload_nvidia_dlls()
-load_dotenv()
+# override=True so a project-local .env wins over any stale Windows env var
+load_dotenv(override=True)
 
 import torch  # noqa: E402  (silero-vad needs it; safe to import after dll preload)
-from anthropic import Anthropic  # noqa: E402
+from anthropic import Anthropic, APIStatusError, APIConnectionError  # noqa: E402
 from faster_whisper import WhisperModel  # noqa: E402
 from kokoro_onnx import Kokoro  # noqa: E402
 from openwakeword.model import Model as WakeModel  # noqa: E402
@@ -392,8 +393,27 @@ def main() -> None:
 
         print("[claude] streaming...")
         t0 = time.time()
-        reply = stream_claude_to_tts(claude, text, history, tts)
-        print(f"[claude] ({time.time()-t0:.2f}s) reply: {reply!r}")
+        try:
+            reply = stream_claude_to_tts(claude, text, history, tts)
+            print(f"[claude] ({time.time()-t0:.2f}s) reply: {reply!r}")
+        except APIStatusError as e:
+            print(f"[claude] HTTP {e.status_code}: {e.message}", file=sys.stderr)
+            if e.status_code == 401:
+                tts.say("My API key isn't working. Check your dot env file.")
+            elif e.status_code == 429:
+                tts.say("I'm being rate limited. Try again in a moment.")
+            elif e.status_code >= 500:
+                tts.say("Anthropic is having trouble. Try again soon.")
+            else:
+                tts.say("Something went wrong talking to Claude.")
+            # remove the failed user turn from history so we don't poison context
+            if history and history[-1].get("role") == "user":
+                history.pop()
+        except APIConnectionError as e:
+            print(f"[claude] connection error: {e}", file=sys.stderr)
+            tts.say("I can't reach the internet right now.")
+            if history and history[-1].get("role") == "user":
+                history.pop()
 
         # let the response finish playing before we listen for the next wake
         tts.wait_idle()
