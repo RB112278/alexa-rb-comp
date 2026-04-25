@@ -115,7 +115,7 @@ def main() -> None:
     print("[boot] opening mic")
     q = audio_stream()
 
-    speak(tts, "Online. Say hey jarvis.")
+    speak(tts, f"Online. Say {WAKE_NAME.replace('_', ' ')}.")
     print(f"[ready] waiting for wake word '{WAKE_NAME}' (threshold {WAKE_THRESHOLD})")
 
     cooldown_until = 0.0
