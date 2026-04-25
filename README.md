@@ -3,7 +3,7 @@
 Desktop voice agent. Wake word -> STT -> (later) router -> TTS.
 
 Stack (MVP):
-- **Wake word**: openwakeword (`hey_jarvis` pretrained model)
+- **Wake word**: openwakeword (`alexa` pretrained model)
 - **STT**: faster-whisper, CUDA 12, `base.en` by default
 - **TTS**: pyttsx3 over Windows SAPI
 
@@ -27,7 +27,7 @@ Whisper `base.en` is ~150 MB; `small.en` is ~500 MB.
 python main.py
 ```
 
-Say **"Hey Jarvis"**, wait for "Yes?", then speak. The agent prints and speaks the transcription back.
+Say **"Alexa"**, wait for "Yes?", then speak. The agent prints and speaks the transcription back.
 
 Stop with `Ctrl+C`.
 
@@ -37,7 +37,7 @@ Optional overrides via env vars (or copy `.env.example` to `.env` and load yours
 
 | Var | Default | Notes |
 |---|---|---|
-| `WAKE_WORD` | `hey_jarvis` | also: `alexa`, `hey_mycroft` |
+| `WAKE_WORD` | `alexa` | also: `hey_jarvis`, `hey_mycroft` |
 | `WHISPER_MODEL` | `base.en` | `tiny.en`, `small.en`, `medium.en`, `large-v3` |
 | `WHISPER_DEVICE` | `cuda` | `cpu` to disable GPU |
 | `WHISPER_COMPUTE_TYPE` | `float16` | `int8_float16`, `int8`, `float32` |

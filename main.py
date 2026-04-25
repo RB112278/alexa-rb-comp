@@ -48,7 +48,7 @@ from openwakeword.model import Model as WakeModel  # noqa: E402
 SAMPLE_RATE = 16_000
 WAKE_FRAME_SAMPLES = 1280            # 80 ms @ 16 kHz, openwakeword expects this
 WAKE_THRESHOLD = 0.5
-WAKE_NAME = os.getenv("WAKE_WORD", "hey_jarvis")
+WAKE_NAME = os.getenv("WAKE_WORD", "alexa")
 UTTERANCE_SECONDS = 5.0              # fixed window after wake; silence-VAD comes later
 WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL", "base.en")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda")
