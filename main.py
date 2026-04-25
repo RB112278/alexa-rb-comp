@@ -65,7 +65,7 @@ WAKE_NAME = os.getenv("WAKE_WORD", "alexa")
 # silero-vad runs on 512-sample (32ms) chunks at 16kHz
 VAD_CHUNK_SAMPLES = 512
 VAD_THRESHOLD = float(os.getenv("VAD_THRESHOLD", "0.5"))
-VAD_MIN_SILENCE_MS = int(os.getenv("VAD_MIN_SILENCE_MS", "1500"))  # patience for thinking pauses
+VAD_MIN_SILENCE_MS = int(os.getenv("VAD_MIN_SILENCE_MS", "2000"))  # patience for thinking pauses
 VAD_MIN_SPEECH_MS = 250
 UTTERANCE_MAX_SECONDS = 20.0         # hard cap so we never listen forever
 
